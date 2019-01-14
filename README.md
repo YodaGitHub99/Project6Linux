@@ -6,17 +6,22 @@ GitHub Repository - https://github.com/YodaGitHub99/Project6Linux
 
 IP Address = 54.88.202.15
 SSH Port = 2200
-URL - Catalog application = 
+URL - Catalog application = http://54.88.202.15.xip.io/
 
 Software installed/updated - Following commands were run -
 ===========================================================
 sudo apt-get update
 Apache - sudo apt-get install apache2
-Python 3 mod_wsgi package - sudo apt-get install libapache2-mod-wsgi-py3
+Python mod_wsgi package - sudo apt-get install libapache2-mod-wsgi-py3
 PostgreSQL - sudo apt-get install postgresql
-SQLLite - sudo apt-get install sqlite3 libsqlite3-dev
 GIT - sudo apt-get install git-core
 finger - sudo apt install finger
+Python PIP - sudo apt-get install python3-pip python3-dev nginx
+            sudo apt install python-pip
+Flask (needed for Catalog Webapp) - pip install flask
+sqlalchemy (needed for Catalog Webapp) - pip install sqlalchemy
+Google API Client (needed for Catalog Webapp) - pip install --upgrade google-api-python-client
+Oauth2Client (needed for Catalog Webapp) - pip install --upgrade oauth2client
 Upgrade software - sudo apt-get upgrade
 
 Configuration changes -
@@ -52,19 +57,92 @@ To                         Action      From
 80/tcp (v6)                ALLOW       Anywhere (v6)
 123 (v6)                   ALLOW       Anywhere (v6)
 
+Install web application on server -
+====================================
+Create directory FlaskApp in /var/www
+Create wsgi file - flaskapp.wsgi in FlaskApp directory
+Clone catalog codebase from GITHub - git clone https://YodaGitHub99@github.com/YodaGitHub99/catalog FlaskApp
+Edit the wsgi file & add the following (as per Flask mod_wsgi recommendation - see resources below)
 
-====================================================================
+activate_this = '/var/www/FlaskApp/FlaskApp/venv/bin/activate_this.py'
+execfile(activate_this, dict(__file__=activate_this))
 
-Please follow these steps to properly submit this project:
+#!/usr/bin python
+import sys
+import logging
+logging.basicConfig(stream=sys.stderr)
+sys.path.insert(0, "/var/www/FlaskApp")
 
-DONE    Create a new GitHub repository and add a file named README.md.
+from FlaskApp import app as application
+application.secret_key = 'super_secret_key'
 
-Your README.md file should include all of the following:
-i. The IP address and SSH port so your server can be accessed by the reviewer.
-ii. The complete URL to your hosted web application.
-iii. A summary of software you installed and configuration changes made.
-iv. A list of any third-party resources you made use of to complete this project.
+Create Virtual machine environment (required for Flask app - see resources below) -
+sudo pip install virtualenv
+sudo virtualenv venv
+source venv/bin/activate
 
-Locate the SSH key you created for the grader user.
+In virtual env run following -
+pip install Flask
+pip install sqlalchemy
+pip install requests
+pip install oauth2client
 
-During the submission process, paste the contents of the grader user's SSH key into the "Notes to Reviewer" field.
+Create file FlaskApp.conf in /etc/apache2/sites-enabled/
+Add the following -
+
+<VirtualHost *:80>
+                ServerName 54.88.202.15.xip.io
+                ServerAdmin webmaster@server.com
+                ServerAlias ec2-54-88-202-15.compute-1.amazonaws.com
+                WSGIDaemonProcess FlaskApp user=grader group=grader threads=5
+                WSGIProcessGroup FlaskApp
+                WSGIScriptAlias / /var/www/FlaskApp/flaskapp.wsgi
+
+                <Directory /var/www/FlaskApp/FlaskApp/>
+                        Order allow,deny
+                        Allow from all
+                WSGIProcessGroup FlaskApp
+                WSGIApplicationGroup %{Global}
+                </Directory>
+                Alias /static /var/www/FlaskApp/FlaskApp/static
+                <Directory /var/www/FlaskApp/FlaskApp/static/>
+                        Order allow,deny
+                        Allow from all
+                </Directory>
+                ErrorLog ${APACHE_LOG_DIR}/error.log
+                LogLevel warn
+                CustomLog ${APACHE_LOG_DIR}/access.log combined
+</VirtualHost>
+
+Modify Google OAUTH -
+=======================
+Edit Credentials -
+Add - http://54.88.202.15.xip.io to Authorized JavaScript origins
+Add - http://54.88.202.15.xip.io/login & http://54.88.202.15.xip.io/gconnect to Authorized redirect URIs
+
+Please note that Facebook login does not work (requires https). Only Google login was tested
+
+postgresql Database -
+======================
+CREATE USER catalog WITH PASSWORD 'catalog_pwd';
+CREATE DATABASE catalog WITH OWNER catalog;
+\c catalog
+REVOKE ALL ON SCHEMA public FROM public;
+GRANT ALL ON SCHEMA public TO catalog;
+
+To create the database tables - run database_setup.py -
+    python database_setup.py
+To pre-populated the db with some data - run test_data.py -
+    python test_data.py
+
+Restart Apache2 - sudo /etc/init.d/apache2 restart
+
+Resources -
+=============
+Amazon Lightsail for hosting Ubuntu instance & web application
+Udacity course videos
+Stackoverflow
+AskUbuntu.com
+Flask (mod_wsgi) - http://flask.pocoo.org/docs/1.0/deploying/mod_wsgi/
+Virtual env for flask - http://flask.pocoo.org/docs/1.0/installation/
+Postgresql db related activities - https://medium.com/coding-blocks/creating-user-database-and-adding-access-on-postgresql-8bfcd2f4a91e
